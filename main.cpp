@@ -7,7 +7,6 @@
 #include <ble/gatt/GattCharacteristic.h>
 #include <ble/gatt/GattService.h>
 #include "att_uuid.h"
-
 #include <USBSerial.h>
 
 USBSerial ser;
@@ -23,7 +22,12 @@ Gap& gap = bleinit.gap();
 GattServer& gattServe = bleinit.gattServer();
 GattClient& gattClient = bleinit.gattClient();
 
+ReadOnlyGattCharacteristic<int16_t> *characteristic;
+GattService* tempservice;
+GattCharacteristic* buffer[2];
+
 int16_t TOUT =0;
+uint16_t interval = 0xFFF;
 
 using namespace ble;
 
@@ -63,7 +67,7 @@ void measure_temp(){
     const int readaddr = 0xBF;
     const int writeaddr = 0xBE;
     uint8_t whoamiaddr[] = {0x0F};
-    uint8_t subaddr[1];
+    uint8_t subaddr[2];
     int resp=4;
 
     char readData[] ={0, 0};
@@ -105,6 +109,9 @@ void measure_temp(){
         databuf[1] = readData[0];
 
         TOUT = databuf[0] | (databuf[1]<<8);
+        GattAttribute::Handle_t handle = characteristic->getValueHandle();
+        gattServe.write(handle, databuf, 2, false);
+
         ser.printf("Uncalibrated temperature: %d\n\r",TOUT);
 
         // Sleep for a while.
@@ -126,6 +133,7 @@ void on_init_complete(BLE::InitializationCompleteCallbackContext *params){
             .setFlags()
             .setName("Caleb's Device", true)
             .setAppearance(adv_data_appearance_t::GENERIC_THERMOMETER)
+         // .setAdvertisingInterval(advertising_interval_t::)
             .getAdvertisingData()
     );
     if(error1 == BLE_ERROR_NONE) {
@@ -135,19 +143,18 @@ void on_init_complete(BLE::InitializationCompleteCallbackContext *params){
         ser.printf("Error advertising payload not set\r\n");
     }
 
-    GattCharacteristic* characteristics[] = new gattServer.ReadOnlyGattCharacteristic(calebs_uuid, &TOUT,
-        GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_READ | GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_INDICATE,
-        nullptr, 0);
-    int arrSize = sizeof(characteristics)/sizeof(characteristics[0]);
-    GattService service = GattService(calebs_uuid, characteristics, arrSize);
-    gattServer.addService(service);
-
     ble_error_t error = gap.startAdvertising(ble::LEGACY_ADVERTISING_HANDLE);
     if(error != BLE_ERROR_NONE) {
         ser.printf("Error advertising not started\r\n");
     }
 
-    gattServer.write()
+    characteristic = new ReadOnlyGattCharacteristic<int16_t>(calebs_uuid, &TOUT,
+        GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_READ | GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_INDICATE,
+        nullptr, 0);
+    buffer[0] = characteristic;
+    tempservice = new GattService(GattService::UUID_HEALTH_THERMOMETER_SERVICE, buffer, 1);
+    gattServe.addService(*tempservice);
+
 }
 
 /* Schedule processing of events from the BLE middleware in the event queue. */
@@ -157,6 +164,7 @@ void schedule_ble_events(BLE::OnEventsToProcessCallbackContext *context){
 
 
 int main(){
+    tempthread.start(callback(measure_temp));
     DigitalOut i2cbuspull(P1_0); // Pull up i2C. resistor.
     i2cbuspull.write(1);
     DigitalOut sensor_pwr(P0_22); // Supply power to all of the sensors (VCC)
