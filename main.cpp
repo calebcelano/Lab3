@@ -148,7 +148,7 @@ void on_init_complete(BLE::InitializationCompleteCallbackContext *params){
         ser.printf("Error advertising not started\r\n");
     }
 
-    characteristic = new ReadOnlyGattCharacteristic<int16_t>(calebs_uuid, &TOUT,
+    characteristic = new ReadOnlyGattCharacteristic<int16_t> (calebs_uuid, &TOUT,
         GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_READ | GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_INDICATE,
         nullptr, 0);
     buffer[0] = characteristic;
